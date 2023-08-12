@@ -2,11 +2,7 @@ import { ethers } from 'hardhat'
 import { time } from '@nomicfoundation/hardhat-network-helpers'
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
 import { ContractArtifactInfo, build } from '../scripts/lib/fe'
-import {
-    BytecodeDeployer,
-    BytecodeDeployer__factory,
-    MockChainlinkVRFV2Randomiser,
-} from '../typechain-types'
+import { MockChainlinkVRFV2Randomiser } from '../typechain-types'
 import { AbiCoder, Contract, Interface, parseEther, solidityPacked } from 'ethers'
 import { expect } from 'chai'
 import { MockChainlinkVRFV2Randomiser__factory } from '../typechain-types/factories/contracts/test'
@@ -19,7 +15,6 @@ describe('Powerball', () => {
     })
 
     let deployer: SignerWithAddress
-    let bytecodeDeployer: BytecodeDeployer
     let powerball: Contract
     let mockRandomiser: MockChainlinkVRFV2Randomiser
     let feeRecipient: string
@@ -30,8 +25,6 @@ describe('Powerball', () => {
         // mocks
         mockRandomiser = await new MockChainlinkVRFV2Randomiser__factory(deployer).deploy()
 
-        // Deploy deployer
-        bytecodeDeployer = await new BytecodeDeployer__factory(deployer).deploy()
         // Deploy Fe contracts
         const args = AbiCoder.defaultAbiCoder().encode(
             ['address', 'uint8', 'uint256', 'uint256', 'address'],
@@ -43,17 +36,13 @@ describe('Powerball', () => {
                 feeRecipient,
             ]
         )
-        const tx = await bytecodeDeployer
-            .deployBytecode(feArtifacts.Powerball.binHex, args)
+        const tx = await deployer
+            .sendTransaction({
+                data: ethers.concat([feArtifacts.Powerball.binHex, args]),
+            })
             .then((tx) => tx.wait(1))
-        const { destination: deployedAddress } =
-            BytecodeDeployer__factory.createInterface().decodeEventLog(
-                'ContractDeployed',
-                tx!.logs[0].data,
-                tx!.logs[0].topics
-            )
         powerball = await new Contract(
-            deployedAddress,
+            tx!.contractAddress!,
             new Interface(feArtifacts.Powerball.abi as any),
             deployer
         )
@@ -71,6 +60,14 @@ describe('Powerball', () => {
         })
         expect(await powerball.entries_count(1)).to.eq(1)
         expect(await ethers.provider.getBalance(feeRecipient)).to.eq(parseEther('0.5'))
+
+        await powerball.enter(
+            solidityPacked(['uint8', 'uint8', 'uint8', 'uint8', 'uint8'], [0, 20, 12, 68, 54]),
+            {
+                value: parseEther('1'),
+            }
+        )
+        expect(await powerball.entries_count(1)).to.eq(2)
     })
 
     it('rejects invalid picks', async () => {
