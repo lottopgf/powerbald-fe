@@ -1,0 +1,65 @@
+use feistel_shuffle::encrypt
+
+const PICKS_COUNT: u256 = 5
+
+struct Ticket {
+    pub participant: address
+    pub picks: Array<u8, 5>
+}
+
+struct PickOutOfRange {
+    pub x: u8
+}
+
+contract Powerball {
+    /// ~*~ immutables ~*~
+    /// @notice Possible domain of numbers the user can pick from
+    ball_domain: u8 // 69 -> possible numbers [0, 69)
+    /// @notice How long (seconds) before a powerball game can be drawn
+    game_duration: u256
+
+    /// ~*~ mutables ~*~
+    games_count: u256
+    /// @notice game_num -> num_of_entries
+    entries_count: u256
+    /// @notice game_num -> ticket_num -> Ticket
+    entries: Map<u256, Map<u256, Ticket>>
+    /// @notice game_num -> randomness
+
+    pub fn __init__(mut self, ball_domain: u8) {
+        self.ball_domain = ball_domain
+    }
+
+    /// @notice Enter the next Powerball draw with some picks
+    /// @param picks User's picks
+    pub fn enter(mut self, ctx: Context, picks: Array<u8, { PICKS_COUNT }>) {
+        // Next game index
+        let g: u256 = self.games_count
+        // Next entry index
+        let e: u256 = self.entries_count
+        self.entries_count += 1
+        // Check every pick is in the expected domain
+        let mut p: u256 = 0
+        while p < PICKS_COUNT {
+            if picks[p] >= self.ball_domain {
+                revert PickOutOfRange(x: picks[p])
+            }
+            p += 1
+        }
+        // Store entry
+        self.entries[g][e] = Ticket(
+            participant: ctx.msg_sender(),
+            picks
+        )
+    }
+
+    /// @notice Close the current game & draw
+    // pub fn draw() {}
+}
+
+#test
+fn test_main(mut ctx: Context) {
+    // // Create a new `Main` contract via `ctx` and test that `get_42` return 42.
+    // let main: Main = Main.create(ctx, 0)
+    // assert main.get_42() == 42
+}

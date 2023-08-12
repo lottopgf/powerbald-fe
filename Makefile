@@ -1,2 +1,2 @@
-test:
-	fe test .
+test-fe:
+	fe test contracts-fe
