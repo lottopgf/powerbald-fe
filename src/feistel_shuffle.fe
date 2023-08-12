@@ -1,0 +1,92 @@
+/// @notice Babylonian sqrt
+/// @param val Value to take sqrt of
+pub fn sqrt(_ val: u256) -> u256 {
+    let mut z: u256
+    if val > 3 {
+        z = val
+        let mut x: u256 = val / 2 + 1
+        while x < z {
+            z = x
+            x = (val / x + x) / 2
+        }
+    } else if val != 0 {
+        z = 1
+    }
+    return z
+}
+
+#test
+fn test_sqrt() {
+    assert sqrt(1) == 1
+    assert sqrt(2) == 1
+    assert sqrt(16) == 4
+}
+
+/// @notice Compute next perfect square unless `n` is already a perfect square
+/// @param n Number to compute next perfect square of
+pub fn next_perfect_square(_ n: u256) -> u256 {
+    let mut sqrt_n: u256 = sqrt(n)
+    if (sqrt_n ** 2 == n) {
+        return n
+    }
+    return (sqrt_n + 1) ** 2
+}
+
+#test
+fn test_next_perfect_square() {
+    assert next_perfect_square(16) == 16
+    assert next_perfect_square(17) == 25
+}
+
+/// @notice Feistel round function
+fn f(_ R: u256, _ i: u256, _ seed: u256, _ domain: u256) -> u256 {
+    return keccak256((R, i, seed, domain).abi_encode())
+}
+
+/// @notice Map x to its permuted value x' in `domain`. The permutation is
+///     deterministic on `seed`.
+/// @param x Original value to permute
+/// @param domain Domain of x that this function bijectively maps over
+/// @param seed Secure pseudorandom number to be used as the seed
+/// @param rounds Number of Feistel rounds to apply; consider setting to >=4
+///     We cheat here by rejecting odd rounds
+/// @returns permuted value x'
+pub fn encrypt(_ x: u256, _ domain: u256, _ seed: u256, _ rounds: u256) -> u256 {
+    // assert domain != 0, "modulus must be > 0"
+    // assert x < domain, "x too large"
+    // assert (rounds & 1) == 0, "rounds must be even"
+
+    let h: u256 = sqrt(next_perfect_square(domain))
+    let mut x_prime: u256 = x
+    while true {
+        let mut L: u256 = x_prime % h
+        let mut R: u256 = x_prime / h
+        let mut i: u256 = 0
+        while i < rounds {
+            let mut next_R: u256 = (L + f(R, i, seed, domain)) % h
+            L = R
+            R = next_R
+            // iteration
+            i += 1
+        }
+        x_prime = h * R + L
+        if x_prime < domain {
+            break
+        }
+    }
+    return x_prime
+}
+
+#test
+fn test_fpe_encrypt() {
+    assert encrypt(695, 8832, 90303272008155720305742510164004896274422117115895691956070043973375533633095, 6) == 4151
+    assert encrypt(2867, 3677, 26388065122900790310571422969337847291358230746927540764047102618136882729635, 4) == 3217
+    assert encrypt(1833, 9620, 4909869722429863882456844150411156787942036631024599184620701486048610949853, 6) == 9112
+    assert encrypt(1018, 2544, 34829521807281056167593628344484763601451116884627114992148991880410519237227, 6) == 1731
+    assert encrypt(3855, 8517, 109421067532330128222022002046542901578790628998338188605784630716183562643083, 2) == 433
+    assert encrypt(1625, 3795, 7053945588883633413252275541987100744615926010312692467605118704326954942284, 2) == 1837
+    assert encrypt(1923, 8125, 99876107928825948259921100666270300887928059806269199893571907318944267592378, 8) == 5759
+    assert encrypt(6924, 7402, 79369054120170298069263178915610665749825554308829428275207464037533884296841, 2) == 6632
+    assert encrypt(954, 1821, 45409548829668808356167584045843558625409149051702035388636202583610829874470, 6) == 162
+    assert encrypt(2732, 3773, 50692313954293967149981978156348221603732550938515264726080765974205963803260, 8) == 3704
+}
