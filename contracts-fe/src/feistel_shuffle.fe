@@ -52,9 +52,9 @@ fn f(_ R: u256, _ i: u256, _ seed: u256, _ domain: u256) -> u256 {
 ///     We cheat here by rejecting odd rounds
 /// @returns permuted value x'
 pub fn encrypt(_ x: u256, _ domain: u256, _ seed: u256, _ rounds: u256) -> u256 {
-    // assert domain != 0, "modulus must be > 0"
-    // assert x < domain, "x too large"
-    // assert (rounds & 1) == 0, "rounds must be even"
+    assert domain != 0 //, "modulus must be > 0"
+    assert x < domain //, "x too large"
+    assert (rounds & 1) == 0 //, "rounds must be even"
 
     let h: u256 = sqrt(next_perfect_square(domain))
     let mut x_prime: u256 = x

@@ -1,8 +1,9 @@
 use feistel_shuffle::encrypt
+use grand_product::is_multiset_eq
 
 const PICKS_COUNT: u256 = 5
 
-struct Ticket {
+struct Entry {
     pub participant: address
     pub picks: Array<u8, 5>
 }
@@ -11,23 +12,57 @@ struct PickOutOfRange {
     pub x: u8
 }
 
+struct UnknownRandomiser {
+    pub randomiser: address
+}
+
+struct WaitLonger {}
+
 contract Powerball {
     /// ~*~ immutables ~*~
+    /// @notice randomiser
+    randomiser: address
     /// @notice Possible domain of numbers the user can pick from
     ball_domain: u8 // 69 -> possible numbers [0, 69)
     /// @notice How long (seconds) before a powerball game can be drawn
     game_duration: u256
 
     /// ~*~ mutables ~*~
+    /// @notice current game number
     games_count: u256
+    /// @notice vrf request id -> game_num
+    game_request_id: Map<u256, u256>
+    /// @notice game_num -> random seed (defined when finalised)
+    game_seed: Map<u256, u256>
+    /// @notice game_num -> finalised timestamp
+    game_finalised: Map<u256, u256>
     /// @notice game_num -> num_of_entries
-    entries_count: u256
-    /// @notice game_num -> ticket_num -> Ticket
-    entries: Map<u256, Map<u256, Ticket>>
-    /// @notice game_num -> randomness
+    entries_count: Map<u256, u256>
+    /// @notice game_num -> Entry_num -> Entry
+    entries: Map<u256, Map<u256, Entry>>
 
-    pub fn __init__(mut self, ball_domain: u8) {
+    /// ~*~ explicit public getters
+    pub fn randomiser(self) -> address { return self.randomiser }
+    pub fn games_count(self) -> u256 { return self.games_count }
+    pub fn game_seed(self, game_num: u256) -> u256 { return self.game_seed[game_num] }
+    pub fn entries_count(self, game_num: u256) -> u256 { return self.entries_count[game_num] }
+    pub fn entries(self, game_num: u256, entry_num: u256) -> Entry { return self.entries[game_num][entry_num].to_mem() }
+    pub fn game_duration(self) -> u256 { return self.game_duration }
+    pub fn game_finalised(self, game_num: u256) -> u256 { return self.game_finalised[game_num] }
+
+    /// @notice constructor
+    pub fn __init__(
+        mut self,
+        ctx: Context,
+        randomiser: address,
+        ball_domain: u8,
+        game_duration: u256
+    ) {
+        self.randomiser = randomiser
         self.ball_domain = ball_domain
+        self.game_duration = game_duration
+        self.games_count = 1
+        self.game_finalised[0] = ctx.block_timestamp()
     }
 
     /// @notice Enter the next Powerball draw with some picks
@@ -36,8 +71,8 @@ contract Powerball {
         // Next game index
         let g: u256 = self.games_count
         // Next entry index
-        let e: u256 = self.entries_count
-        self.entries_count += 1
+        let e: u256 = self.entries_count[g]
+        self.entries_count[g] += 1
         // Check every pick is in the expected domain
         let mut p: u256 = 0
         while p < PICKS_COUNT {
@@ -47,19 +82,85 @@ contract Powerball {
             p += 1
         }
         // Store entry
-        self.entries[g][e] = Ticket(
+        self.entries[g][e] = Entry(
             participant: ctx.msg_sender(),
             picks
         )
     }
 
-    /// @notice Close the current game & draw
-    // pub fn draw() {}
+    pub fn compute_winning_balls(self, game_num: u256) -> Array<u8, { PICKS_COUNT }> {
+        assert self.game_seed[game_num] != 0
+        assert self.game_finalised[game_num] > 0
+
+        let mut winning_balls: Array<u8, { PICKS_COUNT }> = [0; PICKS_COUNT]
+        let mut x: u256 = 0
+        while x < PICKS_COUNT {
+            let x_prime: u256 = encrypt(x, self.ball_domain, self.game_seed[game_num], 6)
+            winning_balls[x] = u8(x_prime)
+            //////
+            x += 1
+        }
+
+        return winning_balls
+    }
+
+    /// @notice Claim winning entry
+    pub fn claim(self, ctx: Context, game_num: u256, entry_num: u256) {
+        assert game_num < self.games_count
+        assert entry_num < self.entries_count[game_num]
+        let entry: Entry = self.entries[game_num][entry_num].to_mem()
+        // Claimoor must be the name on the ticket
+        assert entry.participant == ctx.msg_sender()
+        // Picks must be equivalent to winning balls
+        assert is_multiset_eq(
+            self.compute_winning_balls(game_num),
+            entry.picks,
+            self.game_seed[game_num]
+        )
+        // TODO: Transfer jackpot to msg_sender
+    }
+
+    /// @notice Close the current game & draw a number from VRF
+    pub fn draw(mut self, ctx: Context) {
+        // Precondition: at least `game_duration` must have elapsed since last
+        // finalised draw
+        let expected_deadline: u256 = self.game_finalised[self.games_count - 1] + self.game_duration
+        if ctx.block_timestamp() < expected_deadline {
+            revert WaitLonger()
+        }
+
+        let request_id: u256 = Randomiser(self.randomiser).getRandomNumber(
+            ctx.self_address(),
+            500_000,
+            4
+        )
+        self.game_request_id[request_id] = self.games_count
+        // All new entries will be entered into the next round
+        self.games_count += 1
+    }
+
+    /// @notice VRF callback (finalises game)
+    pub fn receiveRandomWord(mut self, ctx: Context, request_id: u256, random_word: u256) {
+        if ctx.msg_sender() != self.randomiser {
+            revert UnknownRandomiser(randomiser: ctx.msg_sender())
+        }
+
+        let game_num: u256 = self.game_request_id[request_id]
+        self.game_seed[game_num] = random_word
+
+        // record finalised timestamp
+        self.game_finalised[game_num] = ctx.block_timestamp()
+    }
 }
 
-#test
-fn test_main(mut ctx: Context) {
-    // // Create a new `Main` contract via `ctx` and test that `get_42` return 42.
-    // let main: Main = Main.create(ctx, 0)
-    // assert main.get_42() == 42
+/// @notice IRandomiserGen2 poor man's interface
+contract Randomiser {
+    pub fn getRandomNumber(
+        self,
+        _ callbackContract: address,
+        _ callbackGasLimit: u32,
+        _ minConfirmations: u16
+    ) -> u256 {
+        revert
+    }
 }

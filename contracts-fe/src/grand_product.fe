@@ -1,0 +1,39 @@
+const MAX_CAPACITY: u256 = 5
+
+/// +++ DARK MAGIC +++++++++++++++++++++++++++++++++++++++++++++++++
+/// @notice Check multiset equivalence using the grand product check from PlonK
+pub fn is_multiset_eq(
+    _ left: Array<u8, { MAX_CAPACITY }>,
+    _ right: Array<u8, { MAX_CAPACITY }>,
+    _ gamma: u256
+) -> bool {
+    let mut left_product: u256 = 1
+    let mut right_product: u256 = 1
+    let mut i: u256 = 0
+    while i < MAX_CAPACITY {
+        let l: u256 = u256(left[i])
+        let r: u256 = u256(right[i])
+        unsafe {
+            // overflow is expected
+            left_product = std::evm::mul(left_product, std::evm::add(l, gamma))
+            right_product = std::evm::mul(right_product, std::evm::add(r, gamma))
+        }
+        //////
+        i += 1
+    }
+    return left_product == right_product
+}
+
+#test
+pub fn test_is_multiset_eq_happy() {
+    let left: Array<u8, { MAX_CAPACITY }> = [60, 87, 250, 24, 9]
+    let right: Array<u8, { MAX_CAPACITY }> = [9, 250, 60, 24, 87]
+    assert is_multiset_eq(left, right, 0x78f59fb2a6749a8cb1d8cc1c097e0c87ff2848887c581f3ae50afd5989b2564c)
+}
+
+#test
+pub fn test_is_multiset_eq_failure() {
+    let left: Array<u8, { MAX_CAPACITY }> = [60, 87, 250, 24, 9]
+    let right: Array<u8, { MAX_CAPACITY }> = [9, 250, 60, 24, 80]
+    assert is_multiset_eq(left, right, 0x78f59fb2a6749a8cb1d8cc1c097e0c87ff2848887c581f3ae50afd5989b2564c) == false
+}
