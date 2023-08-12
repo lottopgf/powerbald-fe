@@ -1,3 +1,4 @@
+use std::buf::{RawCallBuffer}
 use feistel_shuffle::encrypt
 use grand_product::is_multiset_eq
 
@@ -26,8 +27,14 @@ contract Powerball {
     ball_domain: u8 // 69 -> possible numbers [0, 69)
     /// @notice How long (seconds) before a powerball game can be drawn
     game_duration: u256
+    /// @notice How much is an entry ticket (wei)
+    entry_price: u256
+    /// @notice Fee recipient
+    fee_recipient: address
 
     /// ~*~ mutables ~*~
+    /// @notice cumulative jackpot
+    jackpot: u256
     /// @notice current game number
     games_count: u256
     /// @notice vrf request id -> game_num
@@ -49,6 +56,9 @@ contract Powerball {
     pub fn entries(self, game_num: u256, entry_num: u256) -> Entry { return self.entries[game_num][entry_num].to_mem() }
     pub fn game_duration(self) -> u256 { return self.game_duration }
     pub fn game_finalised(self, game_num: u256) -> u256 { return self.game_finalised[game_num] }
+    pub fn entry_price(self) -> u256 { return self.entry_price }
+    pub fn jackpot(self) -> u256 { return self.jackpot }
+    pub fn fee_recipient(self) -> address { return self.fee_recipient }
 
     /// @notice constructor
     pub fn __init__(
@@ -56,11 +66,15 @@ contract Powerball {
         ctx: Context,
         randomiser: address,
         ball_domain: u8,
-        game_duration: u256
+        game_duration: u256,
+        entry_price: u256,
+        fee_recipient: address
     ) {
         self.randomiser = randomiser
         self.ball_domain = ball_domain
         self.game_duration = game_duration
+        self.entry_price = entry_price
+        self.fee_recipient = fee_recipient
         self.games_count = 1
         self.game_finalised[0] = ctx.block_timestamp()
     }
@@ -68,6 +82,8 @@ contract Powerball {
     /// @notice Enter the next Powerball draw with some picks
     /// @param picks User's picks
     pub fn enter(mut self, ctx: Context, picks: Array<u8, { PICKS_COUNT }>) {
+        let msg_value: u256 = ctx.msg_value()
+        assert msg_value == self.entry_price
         // Next game index
         let g: u256 = self.games_count
         // Next entry index
@@ -86,6 +102,15 @@ contract Powerball {
             participant: ctx.msg_sender(),
             picks
         )
+        // 50% goes to jackpot
+        let half_price_rounded: u256 = msg_value / 2
+        self.jackpot += half_price_rounded
+        // 50% goes to fee recipient
+        let mut buf: RawCallBuffer = RawCallBuffer::new(
+            input_len: 0,
+            output_len: 0
+        )
+        assert ctx.raw_call(addr: self.fee_recipient, value: msg_value - half_price_rounded, buf)
     }
 
     pub fn compute_winning_balls(self, game_num: u256) -> Array<u8, { PICKS_COUNT }> {
@@ -117,7 +142,16 @@ contract Powerball {
             entry.picks,
             self.game_seed[game_num]
         )
-        // TODO: Transfer jackpot to msg_sender
+        // Payout jackpot
+        let mut buf: RawCallBuffer = RawCallBuffer::new(
+            input_len: 0,
+            output_len: 0
+        )
+        assert ctx.raw_call(
+            addr: ctx.msg_sender(),
+            value: self.jackpot,
+            buf
+        )
     }
 
     /// @notice Close the current game & draw a number from VRF
