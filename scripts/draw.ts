@@ -10,7 +10,7 @@ async function main() {
     const [deployer] = await ethers.getSigners()
 
     const randomiser = ChainlinkVRFV2Randomiser__factory.connect(
-        '0x3Fb39835D34Dff0cA72CE8346E878a466AEA54De',
+        '0x6C42a668a0682737c091321545dE2f184B1bB146',
         deployer
     )
     await randomiser.waitForDeployment()
@@ -22,7 +22,7 @@ async function main() {
 
     // Deploy Fe contracts
     const powerball = new Contract(
-        '0x1996d7f83a904a258D2F9A215c674ABFffF7dBC9',
+        '0x328f4936B31bd26390b1be60C9CFeC0047062752',
         new Interface(feArtifacts.Powerball.abi as any),
         deployer
     )

@@ -6,10 +6,10 @@ import { ChainlinkVRFV2Randomiser__factory } from '../typechain-types'
 import { ContractArtifactInfo, build } from './lib/fe'
 import { deployPowerball } from './lib/deployPowerball'
 
-const BALL_DOMAIN = 6
-const GAME_DURATION = 5n * 60n /** 5 mins */
-const ENTRY_PRICE = 2n /** 2 wei */
-const FEE_RECIPIENT = ZeroAddress /** burn address */
+const BALL_DOMAIN = 10
+const GAME_DURATION = 60n * 60n /** 1h */
+const ENTRY_PRICE = parseEther('0.001') /** 2 bucks */
+const FEE_RECIPIENT = '0x62e3e40A0231fe62a4Cea97FfAF2be6C605012Ce'
 
 async function main() {
     const { chainId } = await ethers.provider.getNetwork()
