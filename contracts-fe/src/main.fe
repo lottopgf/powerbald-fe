@@ -43,6 +43,8 @@ contract Powerball {
     game_seed: Map<u256, u256>
     /// @notice game_num -> finalised timestamp
     game_finalised: Map<u256, u256>
+    /// @notice game_num -> winning claimooor
+    game_claimooor: Map<u256, address>
     /// @notice game_num -> num_of_entries
     entries_count: Map<u256, u256>
     /// @notice game_num -> Entry_num -> Entry
@@ -56,6 +58,7 @@ contract Powerball {
     pub fn entries(self, game_num: u256, entry_num: u256) -> Entry { return self.entries[game_num][entry_num].to_mem() }
     pub fn game_duration(self) -> u256 { return self.game_duration }
     pub fn game_finalised(self, game_num: u256) -> u256 { return self.game_finalised[game_num] }
+    pub fn game_claimooor(self, game_num: u256) -> address { return self.game_claimooor[game_num] }
     pub fn entry_price(self) -> u256 { return self.entry_price }
     pub fn jackpot(self) -> u256 { return self.jackpot }
     pub fn fee_recipient(self) -> address { return self.fee_recipient }
@@ -129,18 +132,24 @@ contract Powerball {
         return winning_balls
     }
 
-    /// @notice Claim winning entry
-    pub fn claim(self, ctx: Context, game_num: u256, entry_num: u256) {
-        assert game_num < self.games_count
-        assert entry_num < self.entries_count[game_num]
-        let entry: Entry = self.entries[game_num][entry_num].to_mem()
+    /// @notice Claim winning entry (only valid for previous round)
+    pub fn claim(mut self, ctx: Context, entry_num: u256) {
+        let prev_game_num: u256 = self.games_count - 1
+        assert entry_num < self.entries_count[prev_game_num]
+
+        // Nullify
+        assert self.game_claimooor[prev_game_num] == 0
+        let caller: address = ctx.msg_sender()
+        self.game_claimooor[prev_game_num] = caller
+
+        let entry: Entry = self.entries[prev_game_num][entry_num].to_mem()
         // Claimoor must be the name on the ticket
-        assert entry.participant == ctx.msg_sender()
+        assert entry.participant == caller
         // Picks must be equivalent to winning balls
         assert is_multiset_eq(
-            self.compute_winning_balls(game_num),
+            self.compute_winning_balls(game_num: prev_game_num),
             entry.picks,
-            self.game_seed[game_num]
+            self.game_seed[prev_game_num]
         )
         // Payout jackpot
         let mut buf: RawCallBuffer = RawCallBuffer::new(
@@ -148,7 +157,7 @@ contract Powerball {
             output_len: 0
         )
         assert ctx.raw_call(
-            addr: ctx.msg_sender(),
+            addr: caller,
             value: self.jackpot,
             buf
         )

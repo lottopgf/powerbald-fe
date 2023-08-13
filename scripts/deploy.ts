@@ -4,10 +4,11 @@ import assert from 'assert'
 import { chainlinkVRFV2Configs } from './configs'
 import { ChainlinkVRFV2Randomiser__factory } from '../typechain-types'
 import { ContractArtifactInfo, build } from './lib/fe'
+import { deployPowerball } from './lib/deployPowerball'
 
 const BALL_DOMAIN = 6
-const GAME_DURATION = 5 * 60 /** 5 mins */
-const ENTRY_PRICE = 2 /** 2 wei */
+const GAME_DURATION = 5n * 60n /** 5 mins */
+const ENTRY_PRICE = 2n /** 2 wei */
 const FEE_RECIPIENT = ZeroAddress /** burn address */
 
 async function main() {
@@ -31,7 +32,7 @@ async function main() {
         chainlinkVRFV2Configs[0xa4b1].gasLaneKeyHash30Gwei,
         parseUnits('30', 'gwei'),
         1_000_000n,
-        42n,
+        84n,
     ]
     const randomiser = await new ChainlinkVRFV2Randomiser__factory(deployer).deploy(
         ...chainlinkVRFV2RandomiserConstructorArgs
@@ -44,20 +45,13 @@ async function main() {
     feArtifacts = await build()
 
     // Deploy Fe contracts
-    const args = AbiCoder.defaultAbiCoder().encode(
-        ['address', 'uint8', 'uint256', 'uint256', 'address'],
-        [await randomiser.getAddress(), BALL_DOMAIN, GAME_DURATION, ENTRY_PRICE, FEE_RECIPIENT]
-    )
-    const tx = await deployer
-        .sendTransaction({
-            data: ethers.concat([feArtifacts.Powerball.binHex, args]),
-        })
-        .then((tx) => tx.wait(1))
-    const powerball = new Contract(
-        tx!.contractAddress!,
-        new Interface(feArtifacts.Powerball.abi as any),
-        deployer
-    )
+    const powerball = await deployPowerball(deployer, {
+        randomiser: await randomiser.getAddress(),
+        ballDomain: BALL_DOMAIN,
+        gameDuration: GAME_DURATION,
+        entryPrice: ENTRY_PRICE,
+        feeRecipient: FEE_RECIPIENT,
+    })
     await powerball.waitForDeployment()
     console.log(`Deployed Powerball to ${await powerball.getAddress()}`)
     // Sanity

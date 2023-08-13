@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "POWERBALD",
   "scripts": {
+    "draw": "yarn hardhat --network arb1 run scripts/draw.ts",
     "deploy": "yarn hardhat --network arb1 run scripts/deploy.ts",
     "test": "yarn hardhat test --network hardhat",
     "genFpeTestVectors": "yarn ts-node scripts/generateFpeTestVectors.ts"

@@ -1,19 +1,13 @@
 import { ethers } from 'hardhat'
 import { time } from '@nomicfoundation/hardhat-network-helpers'
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
-import { ContractArtifactInfo, build } from '../scripts/lib/fe'
 import { MockChainlinkVRFV2Randomiser } from '../typechain-types'
-import { AbiCoder, Contract, Interface, parseEther, solidityPacked } from 'ethers'
+import { Contract, ZeroAddress, parseEther, solidityPacked } from 'ethers'
 import { expect } from 'chai'
 import { MockChainlinkVRFV2Randomiser__factory } from '../typechain-types/factories/contracts/test'
+import { deployPowerball } from '../scripts/lib/deployPowerball'
 
 describe('Powerball', () => {
-    let feArtifacts: Record<string, ContractArtifactInfo>
-    before(async () => {
-        // Build fe contract
-        feArtifacts = await build()
-    })
-
     let deployer: SignerWithAddress
     let powerball: Contract
     let mockRandomiser: MockChainlinkVRFV2Randomiser
@@ -26,26 +20,13 @@ describe('Powerball', () => {
         mockRandomiser = await new MockChainlinkVRFV2Randomiser__factory(deployer).deploy()
 
         // Deploy Fe contracts
-        const args = AbiCoder.defaultAbiCoder().encode(
-            ['address', 'uint8', 'uint256', 'uint256', 'address'],
-            [
-                await mockRandomiser.getAddress() /** randomiser */,
-                69 /** ball_domain */,
-                3600 /** game duration =1h */,
-                parseEther('1') /** entry price */,
-                feeRecipient,
-            ]
-        )
-        const tx = await deployer
-            .sendTransaction({
-                data: ethers.concat([feArtifacts.Powerball.binHex, args]),
-            })
-            .then((tx) => tx.wait(1))
-        powerball = await new Contract(
-            tx!.contractAddress!,
-            new Interface(feArtifacts.Powerball.abi as any),
-            deployer
-        )
+        powerball = await deployPowerball(deployer, {
+            randomiser: await mockRandomiser.getAddress(),
+            ballDomain: 69,
+            gameDuration: 3600n,
+            entryPrice: parseEther('1'),
+            feeRecipient,
+        })
         expect(await powerball.randomiser()).to.eq(await mockRandomiser.getAddress())
     })
 
@@ -111,5 +92,30 @@ describe('Powerball', () => {
         })
         // Fail to draw
         await expect(powerball.draw()).to.be.reverted
+    })
+
+    it('claims', async () => {
+        const powerball = await deployPowerball(deployer, {
+            randomiser: await mockRandomiser.getAddress(),
+            ballDomain: 5,
+            gameDuration: 3600n,
+            entryPrice: parseEther('1'),
+            feeRecipient,
+        })
+        const picks = solidityPacked(
+            ['uint8', 'uint8', 'uint8', 'uint8', 'uint8'],
+            [0, 1, 2, 3, 4] /** guaranteed win with domain == 5 */
+        )
+        await powerball.enter(picks, {
+            value: parseEther('1'),
+        })
+        // fulfill vrf
+        await time.increase(3601)
+        await powerball.draw()
+        await mockRandomiser.fulfillRandomWords(1, [69420])
+        // test claim
+        const balanceBefore = await ethers.provider.getBalance(deployer.address)
+        await powerball.claim(0)
+        expect(await ethers.provider.getBalance(deployer.address)).to.be.gt(balanceBefore)
     })
 })
