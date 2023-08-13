@@ -2,5 +2,4 @@ name = "fe-powerball"
 version = "1.0"
 
 [dependencies]
-# my_lib = "../my_lib"
-# my_lib = { path = "../my_lib", version = "1.0" }
+feistel_shuffle = { path = "../vendor/feistel_shuffle_fe", version = "1.0" }

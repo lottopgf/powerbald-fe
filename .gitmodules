@@ -1,0 +1,3 @@
+[submodule "vendor/feistel_shuffle_fe"]
+	path = vendor/feistel_shuffle_fe
+	url = git@github.com:kevincharm/feistel_shuffle_fe.git
